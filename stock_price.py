@@ -17,8 +17,9 @@ class StockPriceTool(BaseTool):
     description = "Useful for when you need to find out the price of stock. You should input the stock ticker used on the yfinance API"
 
     def _run(self, stockticker: str):
-        # print("i'm running")
+        print("\n\n\n正在查詢 " + stockticker + " 的股價...")
         price_response = get_stock_price(stockticker)
+        print("\n" + stockticker + " 的股價是 " + str(price_response) + " 元")
 
         return price_response
 

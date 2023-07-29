@@ -18,15 +18,18 @@ import json
 
 import aiohttp
 
-from fastapi import Request, FastAPI, HTTPException
+from fastapi import Request, Response, FastAPI, HTTPException
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from langchain.chat_models import ChatOpenAI
 from langchain.agents import AgentType
 from langchain.agents import initialize_agent, Tool
-from langchain.schema import HumanMessage
+from langchain.schema import HumanMessage, LLMResult
+from langchain.callbacks import StdOutCallbackHandler
 
 from stock_price import StockPriceTool
 from stock_peformace import StockPercentageChangeTool, StockGetBestPerformingTool
+from bash_command_tool import BashCommandTool
 
 from linebot import (
     AsyncLineBotApi, WebhookParser
@@ -41,6 +44,10 @@ from linebot.models import (
 
 from dotenv import load_dotenv, find_dotenv
 _ = load_dotenv(find_dotenv())  # read local .env file
+
+import langchain
+langchain.verbose = True
+
 
 # get channel_secret and channel_access_token from your environment variable
 channel_secret = os.getenv('ChannelSecret', None)
@@ -60,15 +67,43 @@ parser = WebhookParser(channel_secret)
 
 # Langchain (you must use 0613 model to use OpenAI functions.)
 model = ChatOpenAI(model="gpt-3.5-turbo-0613")
-tools = [StockPriceTool(), StockPercentageChangeTool(),
-         StockGetBestPerformingTool()]
+tools = [
+    # StockPriceTool(),
+    BashCommandTool(),
+    # StockPercentageChangeTool(),
+    # StockGetBestPerformingTool()
+]
+
+
+
 open_ai_agent = initialize_agent(tools,
                                  model,
-                                 agent=AgentType.OPENAI_FUNCTIONS,
+                                 agent=AgentType.STRUCTURED_CHAT_ZERO_SHOT_REACT_DESCRIPTION,
+                                #  agent=AgentType.OPENAI_FUNCTIONS,
                                  verbose=False)
 
+from typing import Any, Dict, List
+class MyStdOutCallbackHandler(StdOutCallbackHandler):
+    """Customized Callback Handler that prints to std out."""
 
-@app.post("/callback")
+    def on_llm_start(
+        self, serialized: Dict[str, Any], prompts: List[str], **kwargs: Any
+    ) -> None:
+        """Print out the prompts."""
+        print("\n\n\n=== Prompts start ===")
+        for prompt in prompts:
+            print(prompt)
+        print("\n=== Prompts end ===\n\n")
+
+    def on_llm_end(self, response: LLMResult, **kwargs: Any) -> None:
+        """Print out the response."""
+        print("\n\n\n === LLM Response start ===")
+        print(response)
+        print("\n=== LLM Response end ===\n\n")
+
+handler = MyStdOutCallbackHandler()
+
+@app.post("/line")
 async def handle_callback(request: Request):
     signature = request.headers['X-Line-Signature']
 
@@ -87,7 +122,7 @@ async def handle_callback(request: Request):
         if not isinstance(event.message, TextMessage):
             continue
 
-        tool_result = open_ai_agent.run(event.message.text)
+        tool_result = open_ai_agent.run(event.message.text, callbacks=[handler])
 
         await line_bot_api.reply_message(
             event.reply_token,
