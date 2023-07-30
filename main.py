@@ -70,7 +70,7 @@ parser = WebhookParser(channel_secret)
 # Langchain (you must use 0613 model to use OpenAI functions.)
 model = ChatOpenAI(model="gpt-3.5-turbo-0613")
 tools = [
-    # StockPriceTool(),
+    StockPriceTool(),
     BashCommandTool(),
     # StockPercentageChangeTool(),
     # StockGetBestPerformingTool()
@@ -78,8 +78,8 @@ tools = [
 open_ai_agent = initialize_agent(
   tools,
   model,
-  agent=AgentType.STRUCTURED_CHAT_ZERO_SHOT_REACT_DESCRIPTION,
-  #agent=AgentType.OPENAI_FUNCTIONS,
+#   agent=AgentType.STRUCTURED_CHAT_ZERO_SHOT_REACT_DESCRIPTION,
+  agent=AgentType.OPENAI_FUNCTIONS,
   verbose=False
 )
 
