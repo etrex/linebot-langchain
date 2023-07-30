@@ -48,7 +48,7 @@ _ = load_dotenv(find_dotenv())  # read local .env file
 import langchain
 langchain.verbose = True
 
-
+# 載入環境變數
 # get channel_secret and channel_access_token from your environment variable
 channel_secret = os.getenv('ChannelSecret', None)
 channel_access_token = os.getenv('ChannelAccessToken', None)
@@ -59,12 +59,14 @@ if channel_access_token is None:
     print('Specify LINE_CHANNEL_ACCESS_TOKEN as environment variable.')
     sys.exit(1)
 
+# App Server Setup
 app = FastAPI()
 session = aiohttp.ClientSession()
 async_http_client = AiohttpAsyncHttpClient(session)
 line_bot_api = AsyncLineBotApi(channel_access_token, async_http_client)
 parser = WebhookParser(channel_secret)
 
+# Langchain Setup
 # Langchain (you must use 0613 model to use OpenAI functions.)
 model = ChatOpenAI(model="gpt-3.5-turbo-0613")
 tools = [
@@ -73,15 +75,15 @@ tools = [
     # StockPercentageChangeTool(),
     # StockGetBestPerformingTool()
 ]
+open_ai_agent = initialize_agent(
+  tools,
+  model,
+  agent=AgentType.STRUCTURED_CHAT_ZERO_SHOT_REACT_DESCRIPTION,
+  #agent=AgentType.OPENAI_FUNCTIONS,
+  verbose=False
+)
 
-
-
-open_ai_agent = initialize_agent(tools,
-                                 model,
-                                 agent=AgentType.STRUCTURED_CHAT_ZERO_SHOT_REACT_DESCRIPTION,
-                                #  agent=AgentType.OPENAI_FUNCTIONS,
-                                 verbose=False)
-
+# 用於印出內部 Prompt 的 Callback Handler
 from typing import Any, Dict, List
 class MyStdOutCallbackHandler(StdOutCallbackHandler):
     """Customized Callback Handler that prints to std out."""
@@ -103,6 +105,7 @@ class MyStdOutCallbackHandler(StdOutCallbackHandler):
 
 handler = MyStdOutCallbackHandler()
 
+# Webhook
 @app.post("/line")
 async def handle_callback(request: Request):
     signature = request.headers['X-Line-Signature']
@@ -112,18 +115,22 @@ async def handle_callback(request: Request):
     body = body.decode()
 
     try:
+        # 取得所有 events
         events = parser.parse(body, signature)
     except InvalidSignatureError:
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     for event in events:
+        # 篩選出文字訊息
         if not isinstance(event, MessageEvent):
             continue
         if not isinstance(event.message, TextMessage):
             continue
 
+        # 交給 LangChain 生成回覆訊息
         tool_result = open_ai_agent.run(event.message.text, callbacks=[handler])
 
+        # 回覆訊息給 LINE 用戶
         await line_bot_api.reply_message(
             event.reply_token,
             TextSendMessage(text=tool_result)
